@@ -19,14 +19,14 @@
 
 /*Recommended node ID allocation
 ------------------------------------------------------------------------------------------------------------
--ID-	-Node Type-
-0	- Special allocation in JeeLib RFM12 driver - reserved for OOK use
+-ID-    -Node Type-
+0   - Special allocation in JeeLib RFM12 driver - reserved for OOK use
 1-4     - Control nodes
-5-10	- Energy monitoring nodes
-11-14	--Un-assigned --
-15-16	- Base Station & logging nodes
-17-30	- Environmental sensing nodes (temperature humidity etc.)
-31	- Special allocation in JeeLib RFM12 driver - Node31 can communicate with nodes on any network group
+5-10    - Energy monitoring nodes
+11-14   --Un-assigned --
+15-16   - Base Station & logging nodes
+17-30   - Environmental sensing nodes (temperature humidity etc.)
+31  - Special allocation in JeeLib RFM12 driver - Node31 can communicate with nodes on any network group
 -------------------------------------------------------b------------------------------------------------------
 
 
@@ -58,19 +58,23 @@ const byte firmware_version = 32;                                     //firmware
 boolean debug =                   TRUE;
 const unsigned long BAUD_RATE=    38400;
 
+const byte Vrms_AU=               246;                               // Vrms for apparent power readings (when no AC-AC voltage sample is present)
 const byte Vrms_EU=               230;                               // Vrms for apparent power readings (when no AC-AC voltage sample is present)
 const byte Vrms_USA=              110;                               // USA apparent power VRMS
-const int TIME_BETWEEN_READINGS=  5;                             // Time between readings (mS)
-
+const int TIME_BETWEEN_READINGS=  1000;                             // Time between readings (mS)
+const float Fudge1=               0.003068450039339103;             // (3.3/1023) 260.4 * (3.3/1023) = 0.0032258064516129032
+                                                                   // tuned to 246 v in bondi
 
 //http://openenergymonitor.org/emon/buildingblocks/calibration
 
 const float Ical1=                90.9;                             // (2000 turns / 22 Ohm burden) = 90.9
 const float Ical2=                90.9;
 float Vcal_EU=                    260.4;                             // (230V x 13) / (9V x 1.2) = 276.9 Calibration for UK AC-AC adapter 77DB-06-09
+float Vcal_AU=                    296.11;                            // (246V x 13) / (9V x 1.2) = 296.11 Calibration for Australia
 //const float Vcal=               260;                                // Calibration for EU AC-AC adapter 77DE-06-09
 const float Vcal_USA=             130.0;                              // Calibration for US AC-AC adapter 77DA-10-09
 boolean USA=                      FALSE;
+boolean AUS=                      TRUE;
 const byte min_pulsewidth= 110;                              // minimum width of interrupt pulse (default pulse output meters = 100ms)
 
 const byte TEMPERATURE_PRECISION=  12;                                 // 9 (93.8ms),10 (187.5ms) ,11 (375ms) or 12 (750ms) bits equal to resplution of 0.5C, 0.25C, 0.125C and 0.0625C
@@ -152,6 +156,12 @@ const char helpText1[] PROGMEM =                                 // Available Se
 void setup()
 {
   delay(100);
+  if (AUS==TRUE)
+  {
+    Vcal = Vcal_AU;                                                       // Assume USA AC/AC adatper is being used, set calibration accordingly
+    Vrms = Vrms_AU;
+  }
+  else
   if (USA==TRUE)
   {
     Vcal = Vcal_USA;                                                       // Assume USA AC/AC adatper is being used, set calibration accordingly
@@ -176,12 +186,13 @@ void setup()
 
   EmonLibCM_number_of_channels(2);                          // number of current channels
   EmonLibCM_cycles_per_second(50);                          // frequency 50Hz, 60Hz
-  EmonLibCM_datalog_period(TIME_BETWEEN_READINGS);          // period of readings in seconds
+  EmonLibCM_datalog_period(TIME_BETWEEN_READINGS/1000);          // period of readings in seconds
 
   EmonLibCM_min_startup_cycles(10);      // number of cycles to let ADC run before starting first actual measurement
                                          // larger value improves stability if operated in stop->sleep->start mode
 
-  EmonLibCM_voltageCal(Vcal*(3.3/1023));            // 260.4 * (3.3/1023)
+  EmonLibCM_voltageCal(Vcal*Fudge1);            // (3.3/1023) 260.4 * (3.3/1023) = 0.0032258064516129032
+                                                               // tuned to 246 v in bondi
 
   EmonLibCM_currentCal(0,Ical1*(3.3/1023));  // 2000 turns / 22 Ohms burden resistor
   EmonLibCM_currentCal(1,Ical2*(3.3/1023));  // 2000 turns / 22 Ohms burden resistor
@@ -248,7 +259,7 @@ void loop()
     }
   }
 
-  if ((now - last_sample) > TIME_BETWEEN_READINGS*1000)
+  if ((now - last_sample) > TIME_BETWEEN_READINGS/1000.)
   {
     single_LED_flash();                                                            // single flash of LED on local CT sample
     emonPi.power1_plus_2=emonPi.power1 + emonPi.power2;                            // Create power 1 plus power 2 variable for US and solar PV installs
